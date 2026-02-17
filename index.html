@@ -3,94 +3,120 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Capstone: Edge Impulse AI</title>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <title>Capstone: Edge Impulse WASM</title>
+    
+    <script src="edge-impulse-standalone.js"></script>
+
     <style>
-        body { font-family: sans-serif; text-align: center; background: #121212; color: white; margin: 0; padding: 20px; }
-        .card { background: #1e1e1e; padding: 20px; border-radius: 15px; display: inline-block; }
-        #container { position: relative; display: none; margin-top: 20px; border: 3px solid #00ff88; }
-        img { width: 100%; max-width: 400px; height: auto; }
-        .status { margin: 15px; color: #00ff88; font-weight: bold; font-size: 1.2em; }
-        .result-box { background: #333; padding: 10px; margin-top: 10px; border-radius: 8px; }
-        input { padding: 10px; border-radius: 5px; border: none; }
-        button { padding: 10px 20px; border-radius: 5px; border: none; background: #00ff88; font-weight: bold; cursor: pointer; }
+        body { font-family: 'Segoe UI', sans-serif; text-align: center; background: #121212; color: white; margin: 0; padding: 20px; }
+        .card { background: #1e1e1e; padding: 25px; border-radius: 15px; display: inline-block; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        #container { position: relative; display: none; margin-top: 20px; border: 3px solid #333; line-height: 0; }
+        img { width: 100%; max-width: 480px; height: auto; border-radius: 5px; }
+        .status { margin: 15px; color: #00ff88; font-weight: bold; min-height: 24px; }
+        .result-box { background: #252525; padding: 15px; margin-top: 15px; border-radius: 10px; border-left: 5px solid #00ff88; }
+        input { padding: 12px; border-radius: 5px; border: 1px solid #444; background: #000; color: #fff; width: 200px; margin-bottom: 10px; }
+        button { padding: 12px 24px; border-radius: 5px; border: none; background: #00ff88; color: #000; font-weight: bold; cursor: pointer; transition: 0.3s; }
+        button:hover { background: #00cc6e; }
+        #label { font-size: 1.5em; color: #00ff88; }
     </style>
 </head>
 <body>
 
-    <h1>Custom Edge Impulse Vision</h1>
+    <h1>AI Vision Capstone</h1>
     
     <div class="card" id="setup">
-        <h3>Connect to Local ESP32-CAM</h3>
-        <input type="text" id="ipInput" value="192.168.0.100">
-        <button onclick="initSystem()">Start Analysis</button>
+        <h3>System Configuration</h3>
+        <p>Connect to <b>Tenda_E6A990</b> WiFi first.</p>
+        <input type="text" id="ipInput" value="192.168.0.100" placeholder="ESP32 IP Address">
+        <br>
+        <button onclick="initSystem()">Initialize AI System</button>
     </div>
 
     <div id="container">
         <img id="cam" crossorigin="anonymous">
     </div>
     
-    <div class="status" id="stat"></div>
+    <div class="status" id="stat">System Ready</div>
+
     <div id="results" class="result-box" style="display:none;">
-        <h3>Detection: <span id="label" style="color:#00ff88">---</span></h3>
-        <p>Confidence: <span id="conf">0</span>%</p>
+        <div>Detection: <span id="label">---</span></div>
+        <div>Confidence: <span id="conf">0</span>%</div>
     </div>
 
-    <script src="edge-impulse-standalone.js"></script>
+    <script>
+        const img = document.getElementById('cam');
+        const stat = document.getElementById('stat');
+        const labelText = document.getElementById('label');
+        const confText = document.getElementById('conf');
+        let classifier;
 
-<script>
-    const img = document.getElementById('cam');
-    const stat = document.getElementById('stat');
-    const labelText = document.getElementById('label');
-    const confText = document.getElementById('conf');
-    
-    let classifier;
+        async function initSystem() {
+            const ip = document.getElementById('ipInput').value;
 
-    async function initSystem() {
-        const ip = document.getElementById('ipInput').value;
-        document.getElementById('setup').style.display = 'none';
-        document.getElementById('container').style.display = 'inline-block';
-        
-        try {
-            stat.innerText = "Initializing WASM Runner...";
-            
-            // This connects to the .js and .wasm files in your repo
-            classifier = new EdgeImpulseClassifier();
-            await classifier.init();
-            
-            stat.innerText = "Connecting to ESP32...";
-            img.src = `http://${ip}/stream`;
-            
-            runInference();
-        } catch (err) {
-            stat.innerText = "WASM Error: " + err.message;
-        }
-    }
+            // 1. Library existence check
+            if (typeof EdgeImpulseClassifier === 'undefined') {
+                stat.style.color = "#ff4444";
+                stat.innerText = "CRITICAL ERROR: edge-impulse-standalone.js not loaded.";
+                alert("The browser cannot find the library file. Ensure it is named correctly on GitHub.");
+                return;
+            }
 
-    async function runInference() {
-        if (img.complete && img.naturalWidth > 0) {
-            // Get image data from the stream
-            const canvas = document.createElement('canvas');
-            canvas.width = classifier.width;
-            canvas.height = classifier.height;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            document.getElementById('setup').style.display = 'none';
+            document.getElementById('container').style.display = 'inline-block';
+            document.getElementById('results').style.display = 'block';
             
-            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            
-            // Run the Edge Impulse model
-            const result = await classifier.classify(imageData.data);
-            
-            if (result.results.length > 0) {
-                // Find the result with the highest score
-                const top = result.results.reduce((prev, current) => 
-                    (prev.value > current.value) ? prev : current);
+            try {
+                stat.innerText = "Loading WASM Engine (Wait 5s)...";
                 
-                labelText.innerText = top.label;
-                confText.innerText = Math.round(top.value * 100);
-                stat.innerText = "System Active";
+                // 2. Initialize the Edge Impulse WASM runner
+                classifier = new EdgeImpulseClassifier();
+                await classifier.init();
+                
+                stat.innerText = "Connecting to ESP32-CAM...";
+                img.src = `http://${ip}/stream`;
+                
+                // 3. Start the loop
+                runInference();
+            } catch (err) {
+                stat.style.color = "#ff4444";
+                stat.innerText = "WASM Error: " + err.message;
+                console.error(err);
             }
         }
-        requestAnimationFrame(runInference);
-    }
-</script>
+
+        async function runInference() {
+            if (img.complete && img.naturalWidth > 0) {
+                try {
+                    // Create a temporary canvas to grab image data
+                    const canvas = document.createElement('canvas');
+                    canvas.width = classifier.size[0]; // Uses model's expected width
+                    canvas.height = classifier.size[1]; // Uses model's expected height
+                    const ctx = canvas.getContext('2d');
+                    
+                    // Draw image to canvas to get pixels
+                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                    
+                    // Run the Edge Impulse classification
+                    const result = await classifier.classify(imageData.data);
+                    
+                    if (result.results && result.results.length > 0) {
+                        // Get the result with highest confidence
+                        const top = result.results.reduce((prev, current) => 
+                            (prev.value > current.value) ? prev : current);
+                        
+                        labelText.innerText = top.label.toUpperCase();
+                        confText.innerText = Math.round(top.value * 100);
+                        stat.innerText = "AI ACTIVE";
+                        stat.style.color = "#00ff88";
+                    }
+                } catch (e) {
+                    console.error("Inference failed", e);
+                }
+            }
+            // Repeat as fast as the browser allows
+            requestAnimationFrame(runInference);
+        }
+    </script>
+</body>
+</html>
