@@ -36,69 +36,61 @@
         <p>Confidence: <span id="conf">0</span>%</p>
     </div>
 
-    <script>
-        const img = document.getElementById('cam');
-        const stat = document.getElementById('stat');
-        const labelText = document.getElementById('label');
-        const confText = document.getElementById('conf');
-        let model;
-        let labels = [];
+    <script src="edge-impulse-standalone.js"></script>
 
-        async function initSystem() {
-            const ip = document.getElementById('ipInput').value;
-            document.getElementById('setup').style.display = 'none';
-            document.getElementById('container').style.display = 'inline-block';
-            document.getElementById('results').style.display = 'block';
+<script>
+    const img = document.getElementById('cam');
+    const stat = document.getElementById('stat');
+    const labelText = document.getElementById('label');
+    const confText = document.getElementById('conf');
+    
+    let classifier;
+
+    async function initSystem() {
+        const ip = document.getElementById('ipInput').value;
+        document.getElementById('setup').style.display = 'none';
+        document.getElementById('container').style.display = 'inline-block';
+        
+        try {
+            stat.innerText = "Initializing WASM Runner...";
             
-            try {
-                stat.innerText = "Loading Edge Impulse Model...";
-                // Step 1: Load your metadata to get labels
-                const metadataReq = await fetch('./metadata.json');
-                const metadata = await metadataReq.json();
-                labels = metadata.classification;
+            // This connects to the .js and .wasm files in your repo
+            classifier = new EdgeImpulseClassifier();
+            await classifier.init();
+            
+            stat.innerText = "Connecting to ESP32...";
+            img.src = `http://${ip}/stream`;
+            
+            runInference();
+        } catch (err) {
+            stat.innerText = "WASM Error: " + err.message;
+        }
+    }
 
-                // Step 2: Load the actual TFJS model
-                model = await tf.loadLayersModel('./model.json');
+    async function runInference() {
+        if (img.complete && img.naturalWidth > 0) {
+            // Get image data from the stream
+            const canvas = document.createElement('canvas');
+            canvas.width = classifier.width;
+            canvas.height = classifier.height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            
+            // Run the Edge Impulse model
+            const result = await classifier.classify(imageData.data);
+            
+            if (result.results.length > 0) {
+                // Find the result with the highest score
+                const top = result.results.reduce((prev, current) => 
+                    (prev.value > current.value) ? prev : current);
                 
-                stat.innerText = "Connecting to Stream...";
-                img.src = `http://${ip}/stream`;
-                
-                analyze();
-            } catch (err) {
-                stat.innerText = "Error: " + err.message;
-                console.error(err);
+                labelText.innerText = top.label;
+                confText.innerText = Math.round(top.value * 100);
+                stat.innerText = "System Active";
             }
         }
-
-        async function analyze() {
-            if (img.complete && img.naturalWidth > 0) {
-                // Pre-process the image for the model
-                const tensor = tf.tidy(() => {
-                    return tf.browser.fromPixels(img)
-                        .resizeNearestNeighbor([96, 96]) // Match your Edge Impulse input size (usually 96x96)
-                        .toFloat()
-                        .expandDims();
-                });
-
-                const predictions = await model.predict(tensor).data();
-                tensor.dispose();
-
-                // Find the highest score
-                let maxScore = 0;
-                let maxIndex = 0;
-                for (let i = 0; i < predictions.length; i++) {
-                    if (predictions[i] > maxScore) {
-                        maxScore = predictions[i];
-                        maxIndex = i;
-                    }
-                }
-
-                // Update UI
-                labelText.innerText = labels[maxIndex];
-                confText.innerText = Math.round(maxScore * 100);
-            }
-            requestAnimationFrame(analyze);
-        }
-    </script>
-</body>
-</html>
+        requestAnimationFrame(runInference);
+    }
+</script>
