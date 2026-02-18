@@ -56,7 +56,8 @@
             // 1. Library existence check
             if (typeof EdgeImpulseClassifier === 'undefined') {
                 stat.style.color = "#ff4444";
-                stat.innerText = "CRITICAL ERROR: edge-impulse-standalone.js not loaded.";
+                stat.innerText = "CRITICAL ERROR: edge-impulse-standalone.js
+                    not loaded.";
                 alert("The browser cannot find the library file. Ensure it is named correctly on GitHub.");
                 return;
             }
@@ -120,3 +121,4 @@
     </script>
 </body>
 </html>
+
